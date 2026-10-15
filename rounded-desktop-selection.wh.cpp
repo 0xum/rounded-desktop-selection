@@ -3,11 +3,11 @@
 // @name            Rounded Desktop & Explorer Selection
 // @name:pt         Selecao arredondada do desktop e Explorador
 // @description     Rounded translucent drag selection, Explorer item and header highlights
-// @version         0.2.6
+// @version         0.3.2
 // @author          delta
 // @include         explorer.exe
 // @architecture    x86-64
-// @compilerOptions -lgdiplus -lcomctl32 -lgdi32 -luxtheme -lmsimg32
+// @compilerOptions -lgdiplus -lcomctl32 -lgdi32 -luxtheme -lmsimg32 -lole32 -loleaut32 -lruntimeobject
 // @license         MIT
 // ==/WindhawkMod==
 
@@ -16,6 +16,7 @@
 # Rounded Desktop Selection — MVP
 
 Styles desktop and File Explorer drag selection, item and column-header highlights.
+Explorer Home/Quick access uses an independent XAML observer; no Styler is required.
 Windows retains its native rectangular hit testing and selection behavior.
 The navigation tree keeps its existing styling.
 
@@ -60,6 +61,16 @@ Do not combine with other mods that replace desktop marquee painting.
 #include <cwchar>
 #ifndef MVP_RENDER_TEST
 #include <windhawk_utils.h>
+#include <xamlom.h>
+#undef GetCurrentTime
+#include <winrt/Microsoft.UI.Xaml.Shapes.h>
+#include <winrt/Microsoft.UI.Xaml.Media.h>
+#include <winrt/Microsoft.UI.Dispatching.h>
+#include <array>
+#include <memory>
+#include <mutex>
+#include <thread>
+#include <vector>
 #endif
 
 struct Appearance {
@@ -262,6 +273,280 @@ static ElementBool_t ElementSelected, ElementMouseWithin, ElementMouseFocused;
 static Appearance CurrentAppearance() {
     return {g_rgb.load(), g_fill.load(), g_border.load(), g_radius.load(), g_width.load()};
 }
+
+// Home/Quick access uses WinUI rather than the DirectUI selector used in
+// ordinary folders. Observe only its named rectangle through XAML Diagnostics.
+// This implementation uses the public xamlom interfaces; no Styler is required.
+namespace HomeMarquee {
+namespace Xaml = winrt::Microsoft::UI::Xaml;
+namespace Shapes = winrt::Microsoft::UI::Xaml::Shapes;
+namespace Media = winrt::Microsoft::UI::Xaml::Media;
+using Queue = winrt::Microsoft::UI::Dispatching::DispatcherQueue;
+using Object = winrt::Windows::Foundation::IInspectable;
+static constexpr GUID tapId{0xd8a76c51,0x58ce,0x4e67,{0x8a,0x70,0xd2,0xee,0x45,0x31,0x09,0xd6}};
+static std::atomic<bool> stopping{false};
+static std::atomic<bool> enabled{true};
+static std::atomic<bool> observed{false};
+static HANDLE stopEvent = nullptr;
+static std::thread worker;
+static HMODULE module = nullptr;
+
+struct RectangleState : std::enable_shared_from_this<RectangleState> {
+    winrt::weak_ref<Shapes::Rectangle> rectangle;
+    Queue queue{nullptr};
+    std::array<Xaml::DependencyProperty,5> properties;
+    std::array<Object,5> original;
+    std::array<int64_t,5> tokens{};
+    size_t registered = 0;
+    bool changing = false;
+    bool styled = false;
+
+    explicit RectangleState(Shapes::Rectangle const& value) : rectangle(value), queue(value.DispatcherQueue()),
+        properties{Shapes::Shape::FillProperty(), Shapes::Shape::StrokeProperty(),
+                   Shapes::Shape::StrokeThicknessProperty(), Shapes::Rectangle::RadiusXProperty(),
+                   Shapes::Rectangle::RadiusYProperty()} {
+        for (size_t i=0; i<properties.size(); ++i) original[i] = value.ReadLocalValue(properties[i]);
+    }
+    void Restore(Shapes::Rectangle const& value) {
+        for (size_t i=0; i<properties.size(); ++i) {
+            if (original[i] == Xaml::DependencyProperty::UnsetValue()) value.ClearValue(properties[i]);
+            else value.SetValue(properties[i], original[i]);
+        }
+        styled = false;
+        Wh_SetIntValue(L"HomeMarqueeStyled",0);
+    }
+    void Apply() noexcept {
+        if (changing || stopping) return;
+        changing = true;
+        try {
+            auto value = rectangle.get();
+            if (!value) { changing=false; return; }
+            if (enabled) {
+                auto style = CurrentAppearance();
+                auto color = [rgb=style.rgb](int opacity) {
+                    return winrt::Windows::UI::Color{static_cast<BYTE>((opacity*255+50)/100),
+                        static_cast<BYTE>(rgb>>16),static_cast<BYTE>(rgb>>8),static_cast<BYTE>(rgb)};
+                };
+                value.Fill(Media::SolidColorBrush(color(style.fillOpacity)));
+                value.Stroke(Media::SolidColorBrush(color(style.borderOpacity)));
+                value.StrokeThickness(style.borderWidth);
+                value.RadiusX(style.radius);
+                value.RadiusY(style.radius);
+                if (!styled) Wh_SetIntValue(L"HomeMarqueeStyled",1);
+                styled = true;
+                if (!observed.exchange(true)) Wh_SetIntValue(L"HomeMarqueeObserved", 1);
+            } else if (styled) Restore(value);
+        } catch (...) { Wh_Log(L"Home marquee apply failed: %08X", winrt::to_hresult()); }
+        changing = false;
+    }
+    void Attach() {
+        auto weak = weak_from_this();
+        auto value = rectangle.get();
+        for (size_t i=0; i<properties.size(); ++i) {
+            tokens[i] = value.RegisterPropertyChangedCallback(properties[i], [weak](auto&&, auto&&) {
+                if (auto state = weak.lock()) state->Apply();
+            });
+            ++registered;
+        }
+        Apply();
+    }
+    void Detach() noexcept {
+        changing = true;
+        try {
+            if (auto value = rectangle.get()) {
+                for (size_t i=0; i<registered; ++i)
+                    value.UnregisterPropertyChangedCallback(properties[i], tokens[i]);
+                if (styled) Restore(value);
+            }
+        } catch (...) { Wh_Log(L"Home marquee restore failed: %08X", winrt::to_hresult()); }
+        registered = 0;
+        original = {};
+    }
+};
+struct Entry { InstanceHandle handle; std::shared_ptr<RectangleState> state; };
+static std::mutex mutex;
+static std::vector<Entry> entries;
+
+struct Observer : winrt::implements<Observer,IVisualTreeServiceCallback2> {
+    winrt::com_ptr<IXamlDiagnostics> diagnostics;
+    winrt::com_ptr<IVisualTreeService> service;
+    explicit Observer(IUnknown* site) {
+        winrt::check_hresult(site->QueryInterface(IID_PPV_ARGS(diagnostics.put())));
+        winrt::check_hresult(site->QueryInterface(IID_PPV_ARGS(service.put())));
+    }
+    HRESULT STDMETHODCALLTYPE OnVisualTreeChange(ParentChildRelation, VisualElement element,
+                                                  VisualMutationType mutation) noexcept override {
+        if (stopping) return S_OK;
+        try {
+            if (mutation == VisualMutationType::Remove) {
+                std::shared_ptr<RectangleState> removed;
+                {
+                    std::lock_guard lock(mutex);
+                    auto it=std::find_if(entries.begin(),entries.end(),[&](auto& e){return e.handle==element.Handle;});
+                    if (it!=entries.end()) { removed=it->state; entries.erase(it); }
+                }
+                if (removed) removed->Detach();
+            } else if (element.Name && wcscmp(element.Name,L"SelectionRectangle")==0) {
+                Object object{nullptr};
+                winrt::check_hresult(diagnostics->GetIInspectableFromHandle(element.Handle,
+                    reinterpret_cast<::IInspectable**>(winrt::put_abi(object))));
+                auto rectangle=object.try_as<Shapes::Rectangle>();
+                if (!rectangle) return S_OK;
+                auto state=std::make_shared<RectangleState>(rectangle);
+                {
+                    std::lock_guard lock(mutex);
+                    if (std::any_of(entries.begin(),entries.end(),[&](auto& e){return e.handle==element.Handle;})) return S_OK;
+                    entries.push_back({element.Handle,state});
+                }
+                state->Attach();
+            }
+        } catch (...) { Wh_Log(L"Home marquee observation failed: %08X",winrt::to_hresult()); }
+        return S_OK;
+    }
+    HRESULT STDMETHODCALLTYPE OnElementStateChanged(InstanceHandle,VisualElementState,LPCWSTR) noexcept override { return S_OK; }
+};
+static winrt::com_ptr<Observer> observer;
+
+struct Tap : winrt::implements<Tap,IObjectWithSite> {
+    HRESULT STDMETHODCALLTYPE SetSite(IUnknown* site) noexcept override {
+        if (!site || stopping) return S_OK;
+        try {
+            auto value=winrt::make_self<Observer>(site);
+            { std::lock_guard lock(mutex); observer=std::move(value); }
+            Wh_SetIntValue(L"HomeTapSiteResult",S_OK);
+            // InitializeXamlDiagnosticsEx loaded an additional reference to this
+            // DLL. Windhawk owns its lifetime and the worker is still running.
+            FreeLibrary(module);
+            return S_OK;
+        } catch (...) {
+            HRESULT result=winrt::to_hresult();
+            Wh_SetIntValue(L"HomeTapSiteResult",result);
+            return result;
+        }
+    }
+    HRESULT STDMETHODCALLTYPE GetSite(REFIID,void** result) noexcept override {
+        if (!result) return E_POINTER;
+        *result=nullptr; return E_NOTIMPL;
+    }
+};
+struct Factory : winrt::implements<Factory,IClassFactory> {
+    HRESULT STDMETHODCALLTYPE CreateInstance(IUnknown* outer,REFIID iid,void** result) noexcept override {
+        if (!result) return E_POINTER;
+        *result=nullptr;
+        if (outer) return CLASS_E_NOAGGREGATION;
+        try {
+            Wh_SetIntValue(L"HomeTapCreated",1);
+            return winrt::make_self<Tap>()->QueryInterface(iid,result);
+        }
+        catch (...) { return winrt::to_hresult(); }
+    }
+    HRESULT STDMETHODCALLTYPE LockServer(BOOL) noexcept override { return S_OK; }
+};
+
+static void Refresh() {
+    enabled = Wh_GetIntSetting(L"ExplorerMarquee") != 0;
+    std::vector<Entry> snapshot;
+    { std::lock_guard lock(mutex); snapshot=entries; }
+    for (auto& entry : snapshot) {
+        auto state=entry.state;
+        try {
+            if (state->queue.HasThreadAccess()) state->Apply();
+            else state->queue.TryEnqueue([state]{state->Apply();});
+        } catch (...) {}
+    }
+}
+static void Start() {
+    stopping=false;
+    enabled=Wh_GetIntSetting(L"ExplorerMarquee")!=0;
+    observed=false;
+    Wh_SetIntValue(L"HomeMarqueeReady",0);
+    Wh_SetIntValue(L"HomeMarqueeObserved",0);
+    Wh_SetIntValue(L"HomeMarqueeStyled",0);
+    Wh_SetIntValue(L"HomeTapCreated",0);
+    Wh_SetIntValue(L"HomeTapSiteResult",E_PENDING);
+    GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+        reinterpret_cast<LPCWSTR>(&Start),&module);
+    stopEvent=CreateEventW(nullptr,TRUE,FALSE,nullptr);
+    if (!module || !stopEvent) return;
+    worker=std::thread([] {
+        try {
+            winrt::init_apartment(winrt::apartment_type::multi_threaded);
+            HMODULE runtime=nullptr;
+            for (int i=0;i<300 && !stopping;++i) {
+                runtime=GetModuleHandleW(L"Microsoft.Internal.FrameworkUdk.dll");
+                if (runtime) break;
+                if (WaitForSingleObject(stopEvent,100)!=WAIT_TIMEOUT) break;
+            }
+            auto initialize=reinterpret_cast<decltype(&InitializeXamlDiagnosticsEx)>(
+                runtime?GetProcAddress(runtime,"InitializeXamlDiagnosticsEx"):nullptr);
+            if (initialize && !stopping) {
+                wchar_t path[MAX_PATH]{};
+                DWORD length=GetModuleFileNameW(module,path,ARRAYSIZE(path));
+                HRESULT result=E_FAIL;
+                if (length && length<ARRAYSIZE(path)) {
+                    for (int i=1;i<=256 && !stopping;++i) {
+                        wchar_t connection[80]{};
+                        swprintf_s(connection,L"WinUIVisualDiagConnection%d",i);
+                        result=initialize(connection,GetCurrentProcessId(),L"",path,tapId,nullptr);
+                        if (result!=HRESULT_FROM_WIN32(ERROR_NOT_FOUND)) break;
+                    }
+                }
+                winrt::com_ptr<Observer> value;
+                // Injection can complete on the UI thread after Initialize
+                // returns. Wait for SetSite before subscribing to the tree.
+                for (int i=0; i<100 && SUCCEEDED(result) && !stopping; ++i) {
+                    { std::lock_guard lock(mutex); value=observer; }
+                    if (value || WaitForSingleObject(stopEvent,50)!=WAIT_TIMEOUT) break;
+                }
+                if (SUCCEEDED(result) && value && !stopping) {
+                    result=value->service->AdviseVisualTreeChange(value.get());
+                    Wh_SetIntValue(L"HomeMarqueeReady",SUCCEEDED(result));
+                }
+                Wh_SetIntValue(L"HomeMarqueeResult",result);
+                Wh_Log(L"Home XAML diagnostics initialized: %08X",result);
+            }
+            winrt::uninit_apartment();
+        } catch (...) { Wh_Log(L"Home XAML initialization failed: %08X",winrt::to_hresult()); }
+    });
+}
+static void Stop() {
+    stopping=true;
+    if (stopEvent) SetEvent(stopEvent);
+    if (worker.joinable()) worker.join();
+    winrt::com_ptr<Observer> value;
+    { std::lock_guard lock(mutex); value=observer; }
+    if (value) value->service->UnadviseVisualTreeChange(value.get());
+    std::vector<Entry> snapshot;
+    { std::lock_guard lock(mutex); snapshot.swap(entries); observer=nullptr; }
+    for (auto& entry : snapshot) {
+        auto state=entry.state;
+        try {
+            if (state->queue.HasThreadAccess()) state->Detach();
+            else {
+                HANDLE finished=CreateEventW(nullptr,TRUE,FALSE,nullptr);
+                if (finished) {
+                    if (state->queue.TryEnqueue([state,finished]{state->Detach();SetEvent(finished);}))
+                        WaitForSingleObject(finished,INFINITE);
+                    CloseHandle(finished);
+                }
+            }
+        } catch (...) {}
+    }
+    if (stopEvent) { CloseHandle(stopEvent); stopEvent=nullptr; }
+}
+} // namespace HomeMarquee
+
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdll-attribute-on-redeclaration"
+extern "C" __declspec(dllexport) HRESULT WINAPI DllGetClassObject(REFCLSID clsid,REFIID iid,void** result) {
+    if (!result) return E_POINTER;
+    *result=nullptr;
+    if (clsid!=HomeMarquee::tapId) return CLASS_E_CLASSNOTAVAILABLE;
+    try { return winrt::make_self<HomeMarquee::Factory>()->QueryInterface(iid,result); }
+    catch (...) { return winrt::to_hresult(); }
+}
+extern "C" __declspec(dllexport) HRESULT WINAPI DllCanUnloadNow() { return S_FALSE; }
+#pragma clang diagnostic pop
 
 static HWND PaintWindow(HDC dc) {
     HWND window = WindowFromDC(dc);
@@ -627,7 +912,11 @@ BOOL Wh_ModInit() {
     return TRUE;
 }
 
-void Wh_ModSettingsChanged() { LoadSettings(); }
+void Wh_ModAfterInit() { HomeMarquee::Start(); }
+
+void Wh_ModSettingsChanged() { LoadSettings(); HomeMarquee::Refresh(); }
+
+void Wh_ModBeforeUninit() { HomeMarquee::Stop(); }
 
 void Wh_ModUninit() {
     Wh_SetIntValue(L"Initialized", 0);

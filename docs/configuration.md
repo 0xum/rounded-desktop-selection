@@ -18,6 +18,10 @@ The mod exposes these settings in Windhawk. The JSON file
 DIP means device-independent pixel: values scale with the desktop window DPI.
 File items use CornerRadius; headers and view buttons use a fixed 4 DIP radius.
 All paths share the color, fill/border opacity and border width settings.
+This includes the WinUI/XAML selector in Home/Quick access. `ExplorerMarquee`
+controls both that selector and the ordinary-folder DirectUI selector. Home
+support is independent of File Explorer Styler and restores its original XAML
+property values when disabled.
 Zero radius produces square corners. Zero border width removes the border.
 At zero fill opacity, the fill is invisible. Very thin rectangles use a solid
 strip at the greater of the configured fill and border opacities.

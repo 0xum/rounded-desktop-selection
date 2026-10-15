@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.2 — 2026-10-15
+
+- Independent Home/Quick access marquee styling through XAML Diagnostics.
+- Shared color, fill/border opacity, radius, width and ExplorerMarquee setting.
+- Restore original XAML values and remove callbacks when disabled/unloaded.
+- User visually confirmed Home styling with File Explorer Styler disabled.
+- Live checks passed for native-value restoration, re-enabling and mod reload.
+- 38 renderer checks retained; 0.3.0/0.3.1 were local integration builds.
+
 ## 0.2.6 — 2026-10-14
 
 - Style the pending item-selection overlay while holding the mouse button,

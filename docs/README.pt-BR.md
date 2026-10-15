@@ -1,7 +1,7 @@
 # Rounded Desktop & Explorer Selection
 
 Mod Windhawk para seleção e hover translúcidos, com cantos arredondados,
-no desktop e no Explorador de Arquivos. Versão experimental 0.2.6 para Windows 11 x64.
+no desktop e no Explorador de Arquivos. Versão experimental 0.3.2 para Windows 11 x64.
 
 ![Prévia gerada pelos testes](preview.png)
 
@@ -34,6 +34,8 @@ Os scripts de instalação atendem ao Windhawk instalado; no portátil, use o ed
 Desabilite pelo Windhawk ou por disable.ps1 em PowerShell elevado.
 enable.ps1 habilita novamente. ExplorerHighlights controla os destaques do
 Explorador; ExplorerMarquee controla o seletor por arraste da área de arquivos.
+O seletor da Home/Acesso rápido também usa ExplorerMarquee e as mesmas opções
+de aparência. O suporte XAML é independente e não requer File Explorer Styler.
 
 ## Compatibilidade
 
@@ -47,6 +49,8 @@ visualização aprovados; versão 0.2.4 aprovada com remoção do contorno preto
 linhas, mantendo o destaque translúcido arredondado.
 Na versão 0.2.6, o clique mantido pressionado também foi aprovado sem retorno
 do azul ou do contorno preto.
+Na versão 0.3.2, o seletor da Home/Acesso rápido foi aprovado visualmente com
+File Explorer Styler desativado.
 
 Se o desktop não permitir seleção com o Lively ativo, compare o comportamento
 nativo com o mod desabilitado. No ambiente inicial, fechar o Lively resolveu

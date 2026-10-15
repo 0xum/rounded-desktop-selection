@@ -57,8 +57,31 @@ The theme detail is also documented in the MIT-licensed
 
 ## Lifecycle callbacks
 
+### Home/Quick access
+
+Home paints its marquee as `Microsoft.UI.Xaml.Shapes.Rectangle` named
+`SelectionRectangle`, rather than `UIMarqueeSelector`. The mod attaches an
+independent XAML Diagnostics TAP through `InitializeXamlDiagnosticsEx` in the
+loaded FrameworkUdk runtime. `DllGetClassObject` supplies an `IObjectWithSite`
+implementation; a visual-tree observer queries only the named rectangle.
+Initialization waits for the asynchronous SetSite call before subscribing.
+
+On its UI thread, the observer saves the five original local property values
+(Fill, Stroke, StrokeThickness, RadiusX and RadiusY), applies the shared appearance
+and tracks property changes. Reentrant writes are guarded. Settings changes
+dispatch updates to each rectangle's own DispatcherQueue. Disabling
+ExplorerMarquee restores the saved values; unloading first stops observation,
+removes property callbacks and restores values on the owning UI threads.
+
+The source remains a single Windhawk file. Home requires the bundled WinUI 3
+headers and COM/runtimeobject libraries, without an external styling mod.
+`HomeMarqueeReady`, `HomeMarqueeObserved`, `HomeMarqueeResult` and the TAP setup
+markers distinguish connection, target discovery and initialization failures.
+
 - `Wh_ModInit`: load settings, start GDI+, resolve layout and register hooks.
+- `Wh_ModAfterInit`: start the independent Home XAML connection worker.
 - `Wh_ModSettingsChanged`: load updated appearance values.
+- `Wh_ModBeforeUninit`: stop the Home observer and restore XAML properties.
 - `Wh_ModUninit`: release the library reference and GDI+ resources after hook removal.
 
 The mod records `Initialized` and `DesktopPaintObserved` in its Windhawk local

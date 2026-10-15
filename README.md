@@ -4,7 +4,7 @@ A Windhawk mod for rounded, translucent selection on the Windows desktop and
 in File Explorer. File hover/selection, column-header hover and the view buttons
 in Explorer's lower-right corner share the configurable color and opacity.
 
-**Version 0.2.6 · experimental · Windows 11 x64**
+**Version 0.3.2 · experimental · Windows 11 x64**
 
 [Português](docs/README.pt-BR.md) · [Configuration](docs/configuration.md) ·
 [Development](docs/development.md) · [Changelog](CHANGELOG.md)
@@ -20,6 +20,8 @@ buttons use a smaller 4 DIP radius. The mod ID remains
 
 - Rounded desktop drag-selection rectangle.
 - The same translucent selector in Explorer's DirectUI file view.
+- Rounded translucent Home/Quick access drag selection through an independent
+  WinUI/XAML observer, without requiring File Explorer Styler.
 - Rounded file hover and selected-item backgrounds.
 - Rounded column-header hover/pressed states, retaining native sort arrows.
 - Explorer view buttons in the lower-right corner use the same colors.
@@ -39,6 +41,9 @@ have not been validated.
 Desktop geometry uses private symbols and a recognized instruction pattern.
 Explorer marquee uses separate symbols and DirectUI exports. Capabilities are
 resolved independently and unsupported paths retain native painting.
+Home/Quick access uses XAML Diagnostics and the named `SelectionRectangle`.
+It follows the same appearance settings and `ExplorerMarquee` switch. The mod
+restores the rectangle's previous local values when this feature is disabled.
 
 Avoid combining this mod with another mod that replaces the same selection
 painting. If desktop selection fails with Lively Wallpaper running, compare
@@ -100,6 +105,11 @@ that the unwanted black file-row rectangle was removed. These results apply to
 the initial environment. In 0.2.6, the held-click overlay was also visually
 confirmed to retain the rounded translucent style without blue/black artifacts.
 Each supported Windows build still needs live testing.
+Home/Quick access marquee styling was visually confirmed in 0.3.2 with File
+Explorer Styler disabled; its XAML connection and target discovery were also
+verified through the mod's local diagnostics.
+Restoring native XAML values, re-enabling the style and reconnecting after a mod
+reload were also verified in the live Home view.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). License: [MIT](LICENSE).
 Windhawk and compiler/runtime binaries are separate projects and are not distributed here.
