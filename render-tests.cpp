@@ -32,6 +32,22 @@ int main() {
         DWORD rgb = 0;
         Check(ParseRgb(L"#E81123", rgb) && rgb == 0xE81123, "RGB parser");
         Check(!ParseRgb(L"#GG1123", rgb) && !ParseRgb(L"E8112300", rgb), "Reject invalid color");
+        Check(ClassifyHighlight(L"ListView", LVP_LISTITEM, LISS_HOT) == Highlight::Item, "File hover receives rounded style");
+        Check(ClassifyHighlight(L"ListView", LVP_LISTITEM, LISS_SELECTED) == Highlight::Item, "File selection receives shared style");
+        Check(ClassifyHighlight(L"ListView", LVP_LISTITEM, LISS_HOTSELECTED) == Highlight::Item, "Selected file hover receives shared style");
+        Check(ClassifyHighlight(L"ListView", LVP_LISTITEM, LISS_NORMAL) == Highlight::None, "Normal file background stays native");
+        Check(ClassifyHighlight(L"TreeView", LVP_LISTITEM, LISS_HOT) == Highlight::None, "Navigation tree is excluded");
+        Check(ClassifyHighlight(L"Header", HP_HEADERITEM, HIS_HOT) == Highlight::Header, "Header hover receives rounded style");
+        Check(ClassifyHighlight(L"Header", HP_HEADERITEM, HIS_SORTEDHOT) == Highlight::Header, "Sorted header hover receives rounded style");
+        Check(ClassifyHighlight(L"Header", HP_HEADERITEM, HIS_NORMAL) == Highlight::None, "Normal header stays native");
+        Check(ClassifyHighlight(L"Header", HP_HEADERSORTARROW, HIS_HOT) == Highlight::None, "Sort arrow stays native");
+        Check(ClassifyHighlight(L"TreeView", HP_HEADERITEM, HIS_HOT) == Highlight::None, "Unrelated controls are excluded");
+        Check(ClassifyHighlight(L"Toolbar", TP_BUTTON, TS_CHECKED) == Highlight::ViewButton, "Checked view button receives rounded style");
+        Check(ClassifyHighlight(L"Toolbar", TP_BUTTON, TS_HOT) == Highlight::ViewButton, "View button hover receives rounded style");
+        Check(ClassifyHighlight(L"Toolbar", TP_BUTTON, TS_NORMAL) == Highlight::None, "Normal toolbar button stays native");
+        Check(ClassifyHighlight(L"ItemsView", 3, 1) == Highlight::NativeFocus, "Native rectangular file focus overlay is suppressed");
+        Check(ClassifyHighlight(L"ItemsView", 3, 2) == Highlight::Item, "Held-click item overlay receives shared rounded style");
+        Check(ClassifyHighlight(L"ItemsView", 3, 3) == Highlight::None, "Unknown ItemsView overlays remain native");
         Gdiplus::Bitmap image(400, 240, PixelFormat32bppARGB);
         Gdiplus::Graphics graphics(&image);
         graphics.Clear(Gdiplus::Color(255, 255, 255, 255));
@@ -87,6 +103,34 @@ int main() {
               std::abs(static_cast<int>(pixel.GetG()) - 29) <= 1 &&
               std::abs(static_cast<int>(pixel.GetB()) - 58) <= 1,
               "Fill blends over dark background");
+        BITMAPINFO dibInfo{};
+        dibInfo.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+        dibInfo.bmiHeader.biWidth = 100; dibInfo.bmiHeader.biHeight = -60;
+        dibInfo.bmiHeader.biPlanes = 1; dibInfo.bmiHeader.biBitCount = 32;
+        void* bits = nullptr;
+        HDC dc = CreateCompatibleDC(nullptr);
+        HBITMAP dib = CreateDIBSection(dc, &dibInfo, DIB_RGB_COLORS, &bits, nullptr, 0);
+        HGDIOBJ old = SelectObject(dc, dib);
+        auto pixels = static_cast<DWORD*>(bits);
+        style = Appearance{};
+        RECT shape{10, 10, 90, 50};
+        memset(bits, 0xFF, 100*60*4);
+        Check(BlendMarquee(dc, shape, nullptr, style, 1), "Premultiplied HDC compositor works");
+        DWORD center = pixels[30*100+50];
+        Check(std::abs(static_cast<int>((center>>8)&255)-207) <= 1, "HDC fill respects twenty percent opacity");
+        memset(bits, 0, 100*60*4);
+        BlendMarquee(dc, shape, nullptr, style, 1);
+        center = pixels[30*100+50];
+        Check((center>>24) == 51 && ((center>>16)&255) <= 47, "Compositor preserves alpha over transparent panes");
+        Check(pixels[10*100+10] == 0, "Transparent rounded corner remains untouched");
+        memset(bits, 0, 100*60*4);
+        RECT strip{40, 20, 60, 40};
+        BlendMarquee(dc, shape, &strip, style, 1);
+        Check(pixels[30*100+39] == 0 && (pixels[30*100+50]>>24) == 51, "Compositor clips partial repaints without extra borders");
+        DWORD handles = GetGuiResources(GetCurrentProcess(), GR_GDIOBJECTS);
+        for (int i = 0; i < 100; ++i) BlendMarquee(dc, shape, nullptr, style, 1);
+        Check(GetGuiResources(GetCurrentProcess(), GR_GDIOBJECTS) == handles, "Repeated hover painting releases GDI handles");
+        SelectObject(dc, old); DeleteObject(dib); DeleteDC(dc);
     }
     Gdiplus::GdiplusShutdown(token);
     return failures ? 1 : 0;

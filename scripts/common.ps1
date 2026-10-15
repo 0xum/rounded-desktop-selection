@@ -85,11 +85,15 @@ function Read-ModSettings {
     param([string]$Path)
     $settings = Get-Content -Raw -LiteralPath $Path | ConvertFrom-Json
     $ranges = @{ FillOpacity = @(0, 100); BorderOpacity = @(0, 100); CornerRadius = @(0, 64); BorderWidth = @(0, 8) }
+    $switches = @('ExplorerHighlights', 'ExplorerMarquee')
     $names = @($settings.PSObject.Properties.Name)
-    if ($names.Count -ne 5 -or @($names | Where-Object { $_ -ne 'Color' -and -not $ranges.ContainsKey($_) }).Count) {
-        throw 'Settings must contain Color, FillOpacity, BorderOpacity, CornerRadius and BorderWidth only.'
+    if ($names.Count -ne 7 -or @($names | Where-Object { $_ -ne 'Color' -and -not $ranges.ContainsKey($_) -and $_ -notin $switches }).Count) {
+        throw 'Settings must contain Color, FillOpacity, BorderOpacity, CornerRadius, BorderWidth, ExplorerHighlights and ExplorerMarquee only.'
     }
     if ($settings.Color -notmatch '^#[0-9a-fA-F]{6}$') { throw 'Color must have the form #RRGGBB.' }
+    foreach ($name in $switches) {
+        if ($settings.$name -isnot [bool]) { throw "$name must be true or false." }
+    }
     foreach ($name in $ranges.Keys) {
         $number = 0
         if (-not [int]::TryParse([string]$settings.$name, [ref]$number) -or $number -lt $ranges[$name][0] -or $number -gt $ranges[$name][1]) {

@@ -15,7 +15,7 @@ if ($Test) {
         ('-DWH_MOD_VERSION=L"' + $project.Version + '"'), (Join-Path $windhawk.Engine '64\windhawk.lib'),
         '-include', 'windhawk_api.h', $project.Source, '-Wl,--export-all-symbols', '-o', $output)
 }
-$arguments += @('-lgdiplus', '-lcomctl32', '-lgdi32')
+$arguments += @('-lgdiplus', '-lcomctl32', '-lgdi32', '-luxtheme', '-lmsimg32')
 Push-Location $windhawk.Compiler
 try {
     & (Join-Path $windhawk.Compiler 'bin\clang++.exe') @arguments

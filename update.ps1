@@ -6,6 +6,7 @@ $windhawk = Get-WindhawkContext $project -ForInstall
 if (-not (Test-Path -LiteralPath $windhawk.ModPath)) { throw 'Mod not installed. Use install.ps1.' }
 $libraryPath = Join-Path $project.Build $project.Library
 if (-not (Test-Path -LiteralPath $libraryPath)) { throw 'Build the mod before updating.' }
+$defaults = Read-ModSettings (Join-Path $PSScriptRoot 'settings.default.json')
 $wasDisabled = Get-ItemPropertyValue -LiteralPath $windhawk.ModPath -Name Disabled
 Set-ItemProperty -LiteralPath $windhawk.ModPath -Name Disabled -Value 1 -Type DWord
 Wait-ModUnload $project.LocalId
@@ -13,6 +14,14 @@ Copy-Item -LiteralPath $libraryPath -Destination (Join-Path $windhawk.ModsDirect
 Copy-Item -LiteralPath $project.Source -Destination (Join-Path $windhawk.SourceDirectory ($project.LocalId + '.wh.cpp')) -Force
 Set-ItemProperty -LiteralPath $windhawk.ModPath -Name LibraryFileName -Value $project.Library
 Set-ItemProperty -LiteralPath $windhawk.ModPath -Name Version -Value $project.Version
+$settingsKey = $windhawk.ModPath + '\Settings'
+$existing = Get-Item -LiteralPath $settingsKey
+foreach ($property in $defaults.PSObject.Properties) {
+    if ($existing.GetValueNames() -notcontains $property.Name) {
+        $kind = if ($property.Name -eq 'Color') { 'String' } else { 'DWord' }
+        New-ItemProperty -LiteralPath $settingsKey -Name $property.Name -Value $property.Value -PropertyType $kind -Force | Out-Null
+    }
+}
 Set-ItemProperty -LiteralPath $windhawk.ModPath -Name SettingsChangeTime -Value ([int][DateTimeOffset]::UtcNow.ToUnixTimeSeconds()) -Type DWord
 Set-ItemProperty -LiteralPath $windhawk.ModPath -Name Disabled -Value $wasDisabled -Type DWord
 Write-Output "Updated $($project.LocalId) to $($project.Version); settings and enabled state preserved."

@@ -3,5 +3,7 @@
   "FillOpacity": 20,
   "BorderOpacity": 80,
   "CornerRadius": 8,
-  "BorderWidth": 1
+  "BorderWidth": 1,
+  "ExplorerHighlights": true,
+  "ExplorerMarquee": true
 }
