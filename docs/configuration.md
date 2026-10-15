@@ -12,8 +12,12 @@ The mod exposes these settings in Windhawk. The JSON file
 | BorderOpacity | 80 | Integer, 0–100% |
 | CornerRadius | 8 | Integer, 0–64 DIP |
 | BorderWidth | 1 | Integer, 0–8 DIP |
+| ExplorerHighlights | true | Boolean: Explorer item/header/view-button styling |
+| ExplorerMarquee | true | Boolean: Explorer drag-selection rectangle |
 
 DIP means device-independent pixel: values scale with the desktop window DPI.
+File items use CornerRadius; headers and view buttons use a fixed 4 DIP radius.
+All paths share the color, fill/border opacity and border width settings.
 Zero radius produces square corners. Zero border width removes the border.
 At zero fill opacity, the fill is invisible. Very thin rectangles use a solid
 strip at the greater of the configured fill and border opacities.
@@ -32,7 +36,10 @@ Copy-Item settings.default.json settings.local.json
 .\install.ps1 -SettingsPath .\settings.local.json
 ```
 
-`update.ps1` preserves the existing installed appearance settings.
+`update.ps1` preserves installed settings and adds missing settings from the
+current defaults. Updating from 0.1.x enables both Explorer features while
+preserving the previous appearance values. Custom JSON for a fresh install
+must include both boolean fields.
 
 ## Build configuration
 

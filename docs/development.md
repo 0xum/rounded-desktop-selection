@@ -9,8 +9,8 @@ Windhawk lifecycle/hook code while testing the same drawing functions.
 `CListView::WndProc` establishes the current list-view window on each thread.
 Only a desktop `SysListView32` under `SHELLDLL_DefView`, with a `Progman` or
 `WorkerW` root, is eligible for custom painting. Other views call the original
-painting function. Initialization is restricted to the Explorer process that
-owns the desktop.
+painting function. Separate Explorer processes also load the mod so their file
+windows can be styled; Explorer operations are restricted to file-window roots.
 
 `CLVDrawManager::_PaintMarquee` receives a dirty repaint rectangle, not the
 whole selection rectangle. Treating it as the selection shape creates rounded
@@ -26,7 +26,36 @@ GDI+ renders the whole native selection shape while clipping to the dirty region
 and to the original device-context clip. Anti-aliasing, alpha blending and DPI
 scaling apply to the appearance. Native selection hit testing remains rectangular.
 
-## Lifecycle
+## Explorer integration
+
+BeginPaint/EndPaint retain the paint-window context for memory DCs. The theme
+hooks replace ListView item and Header hover/selection backgrounds only inside
+Explorer windows. Sort arrows and text/icon rendering remain native.
+File highlights composite directly over the existing pane. They do not request
+an extra LISS_NORMAL pass, which other styling mods may render with a border.
+
+The DirectUI marquee is identified through UIMarqueeSelector StartMarquee and
+EndMarquee. Element::PaintBackground draws the rounded selector into a
+premultiplied DIB, then AlphaBlend composites it onto the original surface.
+This keeps the destination alpha for translucent themes.
+
+Element::PaintBorder still runs its geometry pass. Its _Fill calls are suppressed
+when the mod replaces the selector's or a status view-button's native border.
+DirectUI view-button hover/selection uses exported state getters and is restricted
+to compact controls in Explorer's lower-right status area.
+
+Header/view-button radius is 4 DIP. File and marquee radius use the configured
+CornerRadius. Each Explorer capability is enabled only after its hooks resolve.
+
+The modern file focus outline is not the classic DrawFocusRect call. It is the
+ItemsView theme's part 3/state 1 overlay. That exact overlay is suppressed while
+the rounded file outline remains. Part 3/state 2 is the pending-selection
+overlay observed while holding the mouse button; it uses the shared rounded
+item renderer without a native background pass. Other states remain native.
+The theme detail is also documented in the MIT-licensed
+[File Explorer Focus Border Remover](https://github.com/ramensoftware/windhawk-mods/blob/main/mods/explorer-hide-focus-border.wh.cpp).
+
+## Lifecycle callbacks
 
 - `Wh_ModInit`: load settings, start GDI+, resolve layout and register hooks.
 - `Wh_ModSettingsChanged`: load updated appearance values.

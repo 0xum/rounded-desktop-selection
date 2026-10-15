@@ -1,22 +1,24 @@
-# Rounded Desktop Selection
+# Rounded Desktop & Explorer Selection
 
-Mod Windhawk para deixar o retângulo de seleção por arraste do desktop
-translúcido e arredondado, com cor, opacidade, raio e borda configuráveis.
-Versão **0.1.2**, MVP experimental para Windows 11 x64.
+Mod Windhawk para seleção e hover translúcidos, com cantos arredondados,
+no desktop e no Explorador de Arquivos. Versão experimental 0.2.6 para Windows 11 x64.
 
-![Prévia gerada pelos testes de desenho](preview.png)
+![Prévia gerada pelos testes](preview.png)
 
-Padrão: vermelho `#E81123`, preenchimento com 20% de opacidade, borda com 80%,
-cantos de 8 DIP e borda de 1 DIP. O Windows mantém a seleção retangular nativa.
-Este MVP atua no desktop; a lista de arquivos do Explorador moderno não é coberta.
+O seletor do desktop e da área de arquivos usa raio configurável, com padrão
+de 8 DIP. Linhas de arquivos usam o mesmo estilo; cabeçalhos e botões de
+visualização do canto inferior usam raio menor de 4 DIP. Cor padrão #E81123,
+preenchimento com 20% de opacidade e borda com 80%.
+
+A mistura preserva o alpha do tema translúcido. Texto, ícones, setas de ordenação,
+chips da árvore de navegação e a seleção retangular nativa são preservados.
 
 ## Instalação
 
-No Windhawk, escolha **Create a New Mod**, substitua todo o conteúdo de
-`mod.wh.cpp` pelo arquivo `rounded-desktop-selection.wh.cpp` deste repositório,
-compile pela barra lateral e habilite o mod. Ajuste as opções em Settings.
+No Windhawk, escolha **Create a New Mod**, substitua todo o conteúdo do editor
+por rounded-desktop-selection.wh.cpp, compile pela barra lateral e habilite.
 
-Para compilar pelos scripts, com Windhawk instalado:
+Para usar os scripts, execute na pasta do projeto:
 
 ```powershell
 .\scripts\check-project.ps1
@@ -24,24 +26,31 @@ Para compilar pelos scripts, com Windhawk instalado:
 .\build.ps1 -Test
 ```
 
-Para instalar, abra PowerShell como administrador e execute `install.ps1`.
-Para uma instalação local existente, use `update.ps1`; ele preserva as
-configurações e o estado de habilitação. Os scripts de instalação não atendem
-ao modo portátil do Windhawk; nesse caso, use o editor.
+Abra PowerShell como administrador para instalar com install.ps1 ou atualizar
+uma instalação existente com update.ps1. A atualização preserva as opções
+anteriores e adiciona as novas opções com seus valores padrão.
+Os scripts de instalação atendem ao Windhawk instalado; no portátil, use o editor.
 
-Desabilite pelo Windhawk ou execute `disable.ps1` como administrador para
-retornar ao desenho nativo. `enable.ps1` habilita novamente.
+Desabilite pelo Windhawk ou por disable.ps1 em PowerShell elevado.
+enable.ps1 habilita novamente. ExplorerHighlights controla os destaques do
+Explorador; ExplorerMarquee controla o seletor por arraste da área de arquivos.
 
-## Compatibilidade e configuração
+## Compatibilidade
 
-Validado com Windhawk 1.7.3, Windows 11 build 26300 e comctl32 6.0.26100.9278.
-Outras builds, ARM64, Windows 10 e múltiplas escalas de monitor ainda precisam
-de validação. O mod mantém a pintura nativa quando não reconhece o layout interno.
+Ambiente inicial: Windhawk 1.7.3, Windows 11 x64 build 26300 e comctl32
+6.0.26100.9278. Outras builds e múltiplas escalas de monitor precisam de teste.
+Cada capacidade depende de símbolos/padrões internos e mantém a pintura nativa
+quando não é suportada.
 
-O teste inicial confirmou seleção sem rastros. Se o arraste falhar com o
-Lively Wallpaper ativo, compare o funcionamento nativo com o mod desabilitado.
-No ambiente usado na validação, fechar o Lively restaurou a seleção nativa.
+Validação visual no ambiente inicial: seletor sem rastros, cabeçalho e botões de
+visualização aprovados; versão 0.2.4 aprovada com remoção do contorno preto nas
+linhas, mantendo o destaque translúcido arredondado.
+Na versão 0.2.6, o clique mantido pressionado também foi aprovado sem retorno
+do azul ou do contorno preto.
 
-Consulte [configuração](configuration.md), [desenvolvimento](development.md)
-e o [README completo](../README.md). Arquivos `*.local.json`, binários e logs
-ficam fora do Git. Licença [MIT](../LICENSE).
+Se o desktop não permitir seleção com o Lively ativo, compare o comportamento
+nativo com o mod desabilitado. No ambiente inicial, fechar o Lively resolveu
+esse bloqueio independente do mod.
+
+Consulte [configuração](configuration.md), [desenvolvimento](development.md) e
+o [README completo](../README.md). Licença [MIT](../LICENSE).
